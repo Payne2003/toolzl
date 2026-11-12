@@ -25,6 +25,7 @@ ACTION_VI = {
     "gate.deny_handoff": "Từ chối bàn giao", "gate.deny_api": "Từ chối gửi API",
     "kill_switch.on": "BẬT dừng khẩn cấp", "kill_switch.off": "TẮT dừng khẩn cấp",
     "settings.update": "Đổi cài đặt",
+    "profile.update": "Sửa thông tin sản phẩm", "template.create": "Thêm mẫu", "template.delete": "Xóa mẫu",
 }
 
 

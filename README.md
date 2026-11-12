@@ -86,6 +86,10 @@ pip install -r requirements-dev.txt && pytest
 
 ## Quy trình sử dụng
 
+0. **Sản phẩm & Mẫu** — điền thông tin sản phẩm quảng cáo (mặc định *Tool HanaMedia*): mô tả, tính năng,
+   đối tượng, ưu đãi, giá, link, liên hệ. Chọn một mẫu trong thư viện → **Tạo bài từ mẫu** để mở bản nháp đã
+   điền sẵn. Trường để trống thì dòng tương ứng trong mẫu được bỏ qua; biến không có trong hồ sơ (ví dụ
+   `{van_de}`) được giữ lại để bạn tự điền — phần mềm **không cho gửi duyệt** khi còn biến chưa điền.
 1. **Quản lý nhóm** — thêm nhóm bằng link mời chính thức `https://zalo.me/g/...`. Nhóm mới mặc định
    *không được phép*; bạn phải tích **“Nằm trong danh sách được phép”** và **“Đã xác nhận quyền đăng”**.
 2. **Soạn nội dung** — viết bài, bấm **Gửi duyệt**.

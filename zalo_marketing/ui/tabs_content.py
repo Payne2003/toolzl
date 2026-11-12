@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 
 from ..core.approval import MAX_BODY_CHARS
 from ..core.models import PostStatus, content_hash
+from ..core.templates import find_placeholders
 from ..core.services import Services
 from .common import POST_STATUS_VI, fill_table, fmt_ts, guarded, make_table, selected_id
 from .theme import button, card, label
@@ -90,8 +91,22 @@ class ContentTab(QWidget):
             self._show(self.current_id)
 
     def _update_counter(self) -> None:
-        n = len(self.body_edit.toPlainText())
-        self.counter.setText(f"{n}/{MAX_BODY_CHARS} ký tự")
+        text = self.body_edit.toPlainText()
+        missing = find_placeholders(text)
+        info = f"{len(text)}/{MAX_BODY_CHARS} ký tự"
+        if missing:
+            info = "⚠ Còn biến chưa điền: " + ", ".join("{" + m + "}" for m in missing) + "   ·   " + info
+        self.counter.setText(info)
+        self.counter.setStyleSheet("color:#B25E00;font-weight:600;" if missing else "")
+
+    def load_draft(self, title: str, body: str) -> None:
+        """Mở một bản nháp mới (chưa lưu) với nội dung lấy từ mẫu."""
+        self.new_post()
+        self.title_edit.setText(title)
+        self.body_edit.setPlainText(body)
+        self.editor_title.setText("Bản nháp mới từ mẫu")
+        self.status_label.setText("Đã điền nội dung từ mẫu. Hãy đọc lại, chỉnh sửa và thay các biến còn trống "
+                                  "(nếu có), sau đó <b>Lưu nháp</b> → <b>Gửi duyệt</b>.")
 
     @guarded
     def _load_selected(self):
@@ -123,8 +138,8 @@ class ContentTab(QWidget):
         self.title_edit.clear()
         self.body_edit.clear()
         self.editor_title.setText("Bản nháp mới")
-        self.status_label.setText("Bản nháp mới — chưa lưu. Lưu nháp rồi bấm <b>Gửi duyệt</b> để chuyển cho người duyệt.")
-        self.btn_submit.setEnabled(False)
+        self.status_label.setText("Bản nháp mới — chưa lưu. Bấm <b>Gửi duyệt</b> để lưu và chuyển cho người duyệt.")
+        self.btn_submit.setEnabled(True)
         self.btn_archive.setEnabled(False)
 
     @guarded
@@ -155,7 +170,7 @@ class ContentTab(QWidget):
 
     @guarded
     def submit(self):
-        if self.current_id is None or not self._do_save():
+        if not self._do_save():  # lưu (hoặc tạo mới) trước khi gửi duyệt
             return
         self.svc.posts.submit(self.current_id, self.operator())
         self.reload()

@@ -10,6 +10,7 @@ from .db import Clock, Database, utc_now
 from .dispatcher import Dispatcher
 from .groups import GroupRepository
 from .publishers import OfficialApiPublisher
+from .templates import TemplateRepository
 
 
 class Services:
@@ -19,6 +20,7 @@ class Services:
         self.audit = AuditLog(self.db)
         self.groups = GroupRepository(self.db, self.audit)
         self.posts = ApprovalEngine(self.db, self.audit)
+        self.templates = TemplateRepository(self.db, self.audit)
         self.dispatcher = Dispatcher(self.db, self.audit, self.posts, self.groups, api_publisher)
 
     def close(self) -> None:

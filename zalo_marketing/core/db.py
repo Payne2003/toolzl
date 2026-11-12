@@ -84,6 +84,15 @@ CREATE TABLE IF NOT EXISTS jobs (
 CREATE INDEX IF NOT EXISTS idx_jobs_group_hash ON jobs(group_id, content_hash);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 
+-- Thư viện mẫu bài viết
+CREATE TABLE IF NOT EXISTS templates (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    body        TEXT NOT NULL,
+    builtin     INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL
+);
+
 -- Nhật ký kiểm toán: chỉ thêm, không sửa/xóa
 CREATE TABLE IF NOT EXISTS audit_log (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,

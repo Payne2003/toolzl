@@ -45,6 +45,11 @@ def _validate(title: str, body: str) -> tuple[str, str]:
     return title, body
 
 
+def unfilled_placeholders(body: str) -> list[str]:
+    from .templates import find_placeholders
+    return find_placeholders(body)
+
+
 class ApprovalEngine:
     def __init__(self, db: Database, audit: AuditLog):
         self.db = db
@@ -124,6 +129,10 @@ class ApprovalEngine:
         post = self.get(post_id)
         if post.status not in (PostStatus.DRAFT, PostStatus.REJECTED):
             raise ApprovalError(f"Chỉ gửi duyệt được bản nháp hoặc bản bị từ chối (hiện tại: {post.status.value}).")
+        missing = unfilled_placeholders(post.body)
+        if missing:
+            raise ApprovalError("Nội dung còn biến chưa điền: " + ", ".join("{" + m + "}" for m in missing)
+                                + ". Hãy thay bằng nội dung thật trước khi gửi duyệt.")
         with self.db.transaction():
             self.db.execute(
                 "UPDATE posts SET status = 'pending', review_note = NULL, updated_at = ? WHERE id = ?",

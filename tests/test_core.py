@@ -292,3 +292,39 @@ def test_api_failures_trigger_auto_stop(clock):
     with pytest.raises(GateBlocked):
         s.dispatcher.send_via_api(jobs[2], "an")
     assert s.audit.list(action="kill_switch.on")[0].actor == "system"
+
+
+# --------------------------------------------------------------- templates
+def test_template_render_fills_and_drops_empty_optional_lines():
+    from zalo_marketing.core.templates import render, DEFAULT_PROFILE
+    profile = {**DEFAULT_PROFILE, "link": "https://hanamedia.example", "tinh_nang": "Đăng lịch\n- Thống kê"}
+    out = render("🚀 {ten_san_pham}\n💰 Giá: {gia}\n{tinh_nang}\n👉 {link}\n❓ {van_de}", profile)
+    assert "Tool HanaMedia" in out and "Giá" not in out
+    assert "✅ Đăng lịch\n✅ Thống kê" in out
+    assert "{van_de}" in out  # biến ngoài hồ sơ giữ nguyên để người soạn điền
+
+
+def test_builtin_templates_seeded_once_and_apply(svc):
+    names = [t.name for t in svc.templates.list()]
+    assert "Giới thiệu sản phẩm" in names
+    svc.templates.delete(svc.templates.list()[0].id, "an")
+    from zalo_marketing.core.templates import TemplateRepository
+    TemplateRepository(svc.db, svc.audit)  # không seed lại
+    assert len(svc.templates.list()) == len(names) - 1
+    svc.templates.save_profile("an", {"ten_san_pham": "Tool HanaMedia", "mo_ta_ngan": "Trợ lý đăng bài",
+                                      "uu_dai": "Giảm 30%", "link": "https://hanamedia.example"})
+    tin_ngan = next(t for t in svc.templates.list() if t.name == "Tin ngắn")
+    title, body = svc.templates.apply(tin_ngan.id)
+    assert title == "Tool HanaMedia — Tin ngắn"
+    assert body == "⚡ Tool HanaMedia — Trợ lý đăng bài\n🎁 Giảm 30%\n👉 https://hanamedia.example"
+
+
+def test_profile_link_validation(svc):
+    with pytest.raises(ValidationError):
+        svc.templates.save_profile("an", {"link": "hanamedia.vn"})
+
+
+def test_submit_blocked_with_unfilled_placeholders(svc):
+    p = svc.posts.create("KM", "Bạn đang gặp {van_de}?", "an")
+    with pytest.raises(ApprovalError):
+        svc.posts.submit(p.id, "an")

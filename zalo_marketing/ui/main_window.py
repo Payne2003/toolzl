@@ -16,12 +16,15 @@ from .tabs_content import ApprovalTab, ContentTab
 from .tabs_groups import GroupsTab
 from .tabs_history import HistoryTab, SettingsTab
 from .tabs_queue import QueueTab
+from .tabs_templates import TemplatesTab
 from .theme import label, repolish
 
 REFRESH_MS = 60_000
 
 PAGES = [
     # (icon, tên, tiêu đề, mô tả)
+    ("🏷️", "Sản phẩm & Mẫu", "Sản phẩm & Mẫu bài",
+     "Thông tin sản phẩm quảng cáo (Tool HanaMedia) và thư viện mẫu bài viết."),
     ("✏️", "Soạn nội dung", "Soạn nội dung", "Viết bài marketing và gửi duyệt. Nội dung đã duyệt sẽ được khóa phiên bản."),
     ("✅", "Phê duyệt", "Phê duyệt", "Xem đúng bản sẽ được gửi, duyệt hoặc từ chối kèm lý do."),
     ("👥", "Quản lý nhóm", "Quản lý nhóm", "Danh sách trắng các nhóm Zalo bạn được phép đăng bài."),
@@ -63,17 +66,19 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1080, 680)
 
         op = self.operator
+        self.templates_tab = TemplatesTab(svc, op)
         self.content_tab = ContentTab(svc, op)
         self.approval_tab = ApprovalTab(svc, op)
         self.groups_tab = GroupsTab(svc, op)
         self.queue_tab = QueueTab(svc, op)
         self.history_tab = HistoryTab(svc)
         self.settings_tab = SettingsTab(svc, op)
-        self.pages = [self.content_tab, self.approval_tab, self.groups_tab, self.queue_tab,
+        self.pages = [self.templates_tab, self.content_tab, self.approval_tab, self.groups_tab, self.queue_tab,
                       self.history_tab, self.settings_tab]
         for t in self.pages:
             if hasattr(t, "changed"):
                 t.changed.connect(self.refresh_all)
+        self.templates_tab.use_template.connect(self._open_template)
 
         root = QWidget()
         rl = QHBoxLayout(root)
@@ -231,6 +236,10 @@ class MainWindow(QMainWindow):
         if hasattr(w, "reload"):
             w.reload()
         self.refresh_header()
+
+    def _open_template(self, title: str, body: str) -> None:
+        self.show_page(self.content_tab)
+        self.content_tab.load_draft(title, body)
 
     def show_page(self, widget: QWidget) -> None:
         self.nav.setCurrentRow(self.pages.index(widget))
