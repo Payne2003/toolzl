@@ -218,6 +218,18 @@ QPushButton[variant="ghost"] {{
 QPushButton[variant="ghost"]:hover {{
     background: {PRIMARY_SOFT};
 }}
+QPushButton#UpdateButton {{
+    background: #1F9D55; color: white; border: none; border-radius: 10px; padding: 10px; font-weight: 700;
+}}
+QPushButton#UpdateButton:hover {{
+    background: #198246;
+}}
+QPushButton#CheckUpdate {{
+    background: transparent; border: none; color: #7F8DA6; font-size: 11px; font-weight: 600; padding: 4px;
+}}
+QPushButton#CheckUpdate:hover {{
+    color: white;
+}}
 QPushButton#KillSwitch {{
     background: {DANGER}; color: white; border: none; border-radius: 10px; padding: 11px; font-weight: 700;
 }}

@@ -56,6 +56,26 @@ build_windows.bat
 
 Kết quả: `dist\ZaloMarketing\ZaloMarketing.exe` và (nếu có Inno Setup) `dist\ZaloMarketing-Setup-1.0.0.exe`.
 
+### Cập nhật phần mềm
+
+Phần mềm tự kiểm tra bản mới trên GitHub Releases khi mở (tắt được trong *Cài đặt*), hoặc bấm
+**⟳ Kiểm tra cập nhật** ở cuối thanh bên. Khi có bản mới, nút **⬆ Cập nhật lên vX.Y.Z** xuất hiện:
+
+- Bản cài bằng Setup: tải bộ cài → kiểm tra SHA-256 → cài đè → tự mở lại. Dữ liệu giữ nguyên.
+- Bản portable: mở trang tải bản mới trong trình duyệt.
+
+**Phát hành bản mới (cho người phát triển):**
+
+1. Tăng `__version__` trong `zalo_marketing/__init__.py` và thêm mục mới vào `CHANGELOG.md`.
+2. Commit, rồi push tag trùng phiên bản:
+
+```bash
+git tag v1.1.0 && git push origin v1.1.0
+```
+
+Workflow *Build Windows* sẽ build và tạo Release (ghi chú lấy từ `CHANGELOG.md`). Các máy đang chạy bản cũ
+sẽ thấy nút cập nhật.
+
 ## Cài đặt & chạy từ mã nguồn
 
 ```bash
@@ -92,13 +112,17 @@ pip install -r requirements-dev.txt && pytest
    `{van_de}`) được giữ lại để bạn tự điền — phần mềm **không cho gửi duyệt** khi còn biến chưa điền.
 1. **Quản lý nhóm** — thêm nhóm bằng link mời chính thức `https://zalo.me/g/...`. Nhóm mới mặc định
    *không được phép*; bạn phải tích **“Nằm trong danh sách được phép”** và **“Đã xác nhận quyền đăng”**.
-2. **Soạn nội dung** — viết bài, bấm **Gửi duyệt**.
+2. **Soạn nội dung** — viết bài, đính kèm **ảnh / video** (nút *Thêm ảnh / video* hoặc kéo-thả, tối đa 10 tệp;
+   ảnh ≤ 25 MB, video ≤ 1 GB — giới hạn của phần mềm), bấm **Gửi duyệt**. Ảnh/video được tính vào mã khóa
+   phiên bản: đổi tệp sau khi duyệt sẽ phải duyệt lại.
 3. **Phê duyệt** — người duyệt xem đúng bản sẽ gửi và bấm **Duyệt & khóa phiên bản** (hoặc **Từ chối**
    kèm lý do). Có thể bật *nguyên tắc 4 mắt* (người duyệt ≠ người soạn).
 4. **Hàng đợi** — chọn nội dung đã duyệt + các nhóm, bấm **Xếp lệnh** (có thể hẹn giờ).
 5. Bấm **▶ Bàn giao lệnh tiếp theo**: Safety Gate kiểm tra lần cuối → nội dung được chép vào clipboard →
    Zalo mở tới nhóm. Bạn **tự dán, đọc lại và bấm Gửi**, rồi quay lại xác nhận
    **Tôi đã gửi** / **Chưa gửi — trả lại hàng đợi** / **Bỏ qua** (kèm lý do).
+   Bài có ảnh/video: bấm **Chép N ảnh/video** rồi dán (Ctrl+V) vào khung chat, hoặc kéo tệp từ hộp bàn giao
+   thả thẳng vào Zalo, hoặc **Mở thư mục tệp**.
 6. **Lịch sử** — xem lịch sử đăng và toàn bộ nhật ký kiểm toán, xuất CSV.
 
 ## Approval Engine — khóa phiên bản

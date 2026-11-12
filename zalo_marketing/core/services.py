@@ -9,6 +9,7 @@ from .audit import AuditLog
 from .db import Clock, Database, utc_now
 from .dispatcher import Dispatcher
 from .groups import GroupRepository
+from .media import MediaStore
 from .publishers import OfficialApiPublisher
 from .templates import TemplateRepository
 
@@ -17,11 +18,17 @@ class Services:
     def __init__(self, db_path: str | Path = ":memory:", clock: Clock = utc_now,
                  api_publisher: OfficialApiPublisher | None = None):
         self.db = Database(db_path, clock)
+        if str(db_path) == ":memory:":
+            import tempfile
+            media_dir = Path(tempfile.mkdtemp(prefix="zm_media_"))
+        else:
+            media_dir = Path(db_path).parent / "media"
+        self.media = MediaStore(media_dir)
         self.audit = AuditLog(self.db)
         self.groups = GroupRepository(self.db, self.audit)
         self.posts = ApprovalEngine(self.db, self.audit)
         self.templates = TemplateRepository(self.db, self.audit)
-        self.dispatcher = Dispatcher(self.db, self.audit, self.posts, self.groups, api_publisher)
+        self.dispatcher = Dispatcher(self.db, self.audit, self.posts, self.groups, api_publisher, self.media)
 
     def close(self) -> None:
         self.db.close()

@@ -132,6 +132,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "auto_stop_after_failures": 3,
     # Tên người dùng hiện tại (hiển thị trong nhật ký).
     "operator_name": "",
+    # Tự kiểm tra bản cập nhật khi mở phần mềm.
+    "auto_check_updates": True,
+    # Phiên bản người dùng chọn "bỏ qua" (không nhắc lại).
+    "skipped_version": "",
 }
 
 
@@ -178,6 +182,11 @@ class Database:
                 "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', ?)",
                 (str(SCHEMA_VERSION),),
             )
+            # v1.1: tệp đính kèm (JSON) cho bài viết và lịch sử phiên bản
+            for table in ("posts", "post_versions"):
+                cols = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+                if "attachments" not in cols:
+                    self.conn.execute(f"ALTER TABLE {table} ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]'")
 
     def now(self) -> datetime:
         return self.clock()

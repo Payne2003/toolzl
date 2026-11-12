@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QHBoxLayout, QInputDialog, QLineEdit, QMessageBox, QPlainTextEdit, QSplitter, QVBoxLayout, QWidget,
+    QApplication, QFileDialog, QHBoxLayout, QInputDialog, QLineEdit, QMessageBox, QPlainTextEdit, QSplitter,
+    QVBoxLayout, QWidget,
 )
 
 from ..core.approval import MAX_BODY_CHARS
 from ..core.models import PostStatus, content_hash
 from ..core.templates import find_placeholders
+from ..core.errors import BotError
+from ..core.media import IMAGE_EXTS, MAX_ATTACHMENTS, VIDEO_EXTS
+from .attachments import AttachmentList
 from ..core.services import Services
 from .common import POST_STATUS_VI, fill_table, fmt_ts, guarded, make_table, selected_id
 from .theme import button, card, label
@@ -60,6 +64,17 @@ class ContentTab(QWidget):
         row.addWidget(self.counter)
         rl.addLayout(row)
         rl.addWidget(self.body_edit, 1)
+        arow = QHBoxLayout()
+        self.att_label = label("ẢNH / VIDEO ĐÍNH KÈM", "StatLabel")
+        arow.addWidget(self.att_label)
+        arow.addStretch()
+        arow.addWidget(button("Xóa tệp đã chọn", "ghost", self.remove_attachments))
+        arow.addWidget(button("+  Thêm ảnh / video", slot=self.add_attachments))
+        rl.addLayout(arow)
+        self.att_list = AttachmentList(editable=True)
+        self.att_list.files_dropped.connect(self._add_files)
+        self.att_list.setToolTip("Kéo-thả ảnh / video vào đây")
+        rl.addWidget(self.att_list)
         rl.addWidget(self.status_label)
         btns = QHBoxLayout()
         btns.addWidget(self.btn_archive)
@@ -99,6 +114,59 @@ class ContentTab(QWidget):
         self.counter.setText(info)
         self.counter.setStyleSheet("color:#B25E00;font-weight:600;" if missing else "")
 
+    # ------------------------------------------------------- attachments
+    def _attachments(self) -> list[dict]:
+        return [att for _, att in self.att_list.entries()]
+
+    def _set_attachments(self, atts: list[dict]) -> None:
+        self.att_list.set_items([(str(self.svc.media.path(a)), a) for a in atts])
+        self._update_att_label()
+
+    def _update_att_label(self) -> None:
+        n = self.att_list.count()
+        self.att_label.setText(f"ẢNH / VIDEO ĐÍNH KÈM · {n}/{MAX_ATTACHMENTS}" if n else
+                               "ẢNH / VIDEO ĐÍNH KÈM — kéo-thả tệp vào ô bên dưới")
+
+    @guarded
+    def add_attachments(self):
+        exts = " ".join("*" + e for e in sorted(IMAGE_EXTS | VIDEO_EXTS))
+        files, _ = QFileDialog.getOpenFileNames(self, "Chọn ảnh / video", "",
+                                                f"Ảnh và video ({exts});;Tất cả (*.*)")
+        if files:
+            self._add_files(files)
+
+    def _add_files(self, files: list[str]) -> None:
+        current = self._attachments()
+        errors = []
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            for f in files:
+                if len(current) >= MAX_ATTACHMENTS:
+                    errors.append(f"Tối đa {MAX_ATTACHMENTS} tệp mỗi bài.")
+                    break
+                try:
+                    att = self.svc.media.add(f)
+                except BotError as e:
+                    errors.append(str(e))
+                    continue
+                if all(a["sha256"] != att["sha256"] for a in current):
+                    current.append(att)
+        finally:
+            QApplication.restoreOverrideCursor()
+        self._set_attachments(current)
+        if errors:
+            QMessageBox.warning(self, "Tệp đính kèm", "\n".join(errors))
+
+    @guarded
+    def remove_attachments(self):
+        rows = sorted((self.att_list.row(i) for i in self.att_list.selectedItems()), reverse=True)
+        if not rows:
+            return
+        atts = self._attachments()
+        for r in rows:
+            atts.pop(r)
+        self._set_attachments(atts)
+
     def load_draft(self, title: str, body: str) -> None:
         """Mở một bản nháp mới (chưa lưu) với nội dung lấy từ mẫu."""
         self.new_post()
@@ -120,6 +188,7 @@ class ContentTab(QWidget):
         self.title_edit.setText(p.title)
         if self.body_edit.toPlainText() != p.body:
             self.body_edit.setPlainText(p.body)
+        self._set_attachments(p.attachments)
         self.editor_title.setText(f"Chỉnh sửa #{p.id} · v{p.version}")
         info = f"<b>{POST_STATUS_VI[p.status.value]}</b> · v{p.version} · soạn bởi {p.author}"
         if p.status == PostStatus.APPROVED:
@@ -137,6 +206,7 @@ class ContentTab(QWidget):
         self.table.clearSelection()
         self.title_edit.clear()
         self.body_edit.clear()
+        self._set_attachments([])
         self.editor_title.setText("Bản nháp mới")
         self.status_label.setText("Bản nháp mới — chưa lưu. Bấm <b>Gửi duyệt</b> để lưu và chuyển cho người duyệt.")
         self.btn_submit.setEnabled(True)
@@ -150,11 +220,11 @@ class ContentTab(QWidget):
         """Lưu nội dung; trả về False nếu người dùng hủy. Ném lỗi nghiệp vụ nếu không hợp lệ."""
         title, body = self.title_edit.text(), self.body_edit.toPlainText()
         if self.current_id is None:
-            p = self.svc.posts.create(title, body, self.operator())
+            p = self.svc.posts.create(title, body, self.operator(), attachments=self._attachments())
         else:
             old = self.svc.posts.get(self.current_id)
             if old.status == PostStatus.APPROVED:
-                if content_hash(body) != old.content_hash:
+                if content_hash(body, [a["sha256"] for a in self._attachments()]) != old.content_hash:
                     ok = QMessageBox.question(
                         self, "Nội dung đã duyệt",
                         "Nội dung này đã được duyệt và đang khóa.\n"
@@ -162,7 +232,8 @@ class ContentTab(QWidget):
                         "Tiếp tục?")
                     if ok != QMessageBox.Yes:
                         return False
-            p = self.svc.posts.edit(self.current_id, title, body, self.operator())
+            p = self.svc.posts.edit(self.current_id, title, body, self.operator(),
+                                    attachments=self._attachments())
         self.current_id = p.id
         self.reload()
         self.changed.emit()
@@ -218,6 +289,8 @@ class ApprovalTab(QWidget):
         rl.addWidget(self.meta)
         rl.addWidget(label("NỘI DUNG — ĐÚNG BẢN SẼ ĐƯỢC GỬI", "StatLabel"))
         rl.addWidget(self.preview, 1)
+        self.preview_atts = AttachmentList()
+        rl.addWidget(self.preview_atts)
         rl.addWidget(label("GHI CHÚ", "StatLabel"))
         rl.addWidget(self.note)
         b = QHBoxLayout()
@@ -252,6 +325,7 @@ class ApprovalTab(QWidget):
         pid = selected_id(self.table)
         if pid is None:
             self.preview.clear()
+            self.preview_atts.clear()
             self.meta.setText("Chọn một nội dung ở danh sách bên trái để xem trước.")
             self.viewed_hash = None
             for w in (self.btn_approve, self.btn_reject, self.btn_revoke):
@@ -259,6 +333,8 @@ class ApprovalTab(QWidget):
             return
         p = self.svc.posts.get(pid)
         self.preview.setPlainText(p.body)
+        self.preview_atts.set_items([(str(self.svc.media.path(a)), a) for a in p.attachments])
+        self.preview_atts.setVisible(bool(p.attachments))
         self.viewed_hash = p.content_hash
         meta = (f"<b>{p.title}</b> — v{p.version} · {POST_STATUS_VI[p.status.value]} · soạn bởi {p.author}"
                 f"<br>Mã phiên bản: <code>{p.content_hash[:12]}</code>")

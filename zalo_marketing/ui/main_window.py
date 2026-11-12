@@ -17,6 +17,7 @@ from .tabs_groups import GroupsTab
 from .tabs_history import HistoryTab, SettingsTab
 from .tabs_queue import QueueTab
 from .tabs_templates import TemplatesTab
+from .updater_ui import UpdateController
 from .theme import label, repolish
 
 REFRESH_MS = 60_000
@@ -92,8 +93,22 @@ class MainWindow(QMainWindow):
         self.timer.timeout.connect(self._tick)
         self.timer.start(REFRESH_MS)
 
+        self.updater = UpdateController(svc, self)
+        self.updater.available.connect(self._on_update_available)
+        self.updater.checking.connect(self._on_checking)
+        if svc.db.get_setting("auto_check_updates"):
+            QTimer.singleShot(3000, lambda: self.updater.check(silent=True))
+
         self.nav.setCurrentRow(0)
         self.refresh_header()
+
+    def _on_update_available(self, info) -> None:
+        self.update_btn.setText(f"⬆  Cập nhật lên v{info.version}")
+        self.update_btn.setVisible(True)
+
+    def _on_checking(self, busy: bool) -> None:
+        self.check_btn.setEnabled(not busy)
+        self.check_btn.setText("Đang kiểm tra…" if busy else f"⟳  Kiểm tra cập nhật · v{__version__}")
 
     # ----------------------------------------------------------------- layout
     def _build_sidebar(self) -> QFrame:
@@ -136,6 +151,17 @@ class MainWindow(QMainWindow):
         foot.setSpacing(10)
         self.operator_label = label("", "Operator")
         foot.addWidget(self.operator_label)
+        self.update_btn = QPushButton()
+        self.update_btn.setObjectName("UpdateButton")
+        self.update_btn.setCursor(Qt.PointingHandCursor)
+        self.update_btn.setVisible(False)
+        self.update_btn.clicked.connect(lambda: self.updater.prompt())
+        foot.addWidget(self.update_btn)
+        self.check_btn = QPushButton(f"⟳  Kiểm tra cập nhật · v{__version__}")
+        self.check_btn.setObjectName("CheckUpdate")
+        self.check_btn.setCursor(Qt.PointingHandCursor)
+        self.check_btn.clicked.connect(lambda: self.updater.check(silent=False))
+        foot.addWidget(self.check_btn)
         self.kill_btn = QPushButton()
         self.kill_btn.setObjectName("KillSwitch")
         self.kill_btn.setCursor(Qt.PointingHandCursor)

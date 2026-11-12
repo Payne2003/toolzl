@@ -113,6 +113,7 @@ class SettingsTab(QWidget):
         self.four_eyes = QCheckBox("Người duyệt phải khác người soạn (nguyên tắc 4 mắt)")
         self.api_enabled = QCheckBox("Bật kênh Official API")
         self.auto_stop = QSpinBox(maximum=100, suffix=" lỗi")
+        self.auto_update = QCheckBox("Tự kiểm tra bản cập nhật khi mở phần mềm")
 
         def section(title, subtitle, rows):
             frame, lay = card(title, subtitle)
@@ -139,7 +140,8 @@ class SettingsTab(QWidget):
             w.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         api_state = "đã cấu hình" if svc.dispatcher.api_publisher.is_configured() else "chưa cấu hình"
-        general = section("Chung", None, [("Tên người dùng", self.operator_name), ("", self.four_eyes)])
+        general = section("Chung", None, [("Tên người dùng", self.operator_name), ("", self.four_eyes),
+                                          ("", self.auto_update)])
         limits = section("Giới hạn an toàn", "Đặt 0 để tắt một giới hạn. Khung giờ yên lặng để trống = tắt.", [
             ("Khoảng cách tối thiểu / nhóm", self.min_interval),
             ("Tối đa mỗi nhóm / 24 giờ", self.per_group),
@@ -182,6 +184,7 @@ class SettingsTab(QWidget):
         self.four_eyes.setChecked(bool(s["require_different_approver"]))
         self.api_enabled.setChecked(bool(s["official_api_enabled"]))
         self.auto_stop.setValue(int(s["auto_stop_after_failures"]))
+        self.auto_update.setChecked(bool(s["auto_check_updates"]))
 
     @guarded
     def save(self):
@@ -209,6 +212,7 @@ class SettingsTab(QWidget):
             require_different_approver=self.four_eyes.isChecked(),
             official_api_enabled=self.api_enabled.isChecked(),
             auto_stop_after_failures=self.auto_stop.value(),
+            auto_check_updates=self.auto_update.isChecked(),
         )
         QMessageBox.information(self, "Cài đặt", "Đã lưu.")
         self.changed.emit()

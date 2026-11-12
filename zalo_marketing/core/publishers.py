@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -22,6 +22,7 @@ class HandoffPackage:
     group_name: str
     group_link: str
     text: str
+    attachments: list[str] = field(default_factory=list)  # đường dẫn tuyệt đối ảnh / video
 
 
 @dataclass

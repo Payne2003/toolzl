@@ -22,6 +22,8 @@ UninstallDisplayIcon={app}\ZaloMarketing.exe
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+CloseApplications=yes
+RestartApplications=no
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
@@ -39,4 +41,4 @@ Name: "{autoprograms}\Zalo Marketing"; Filename: "{app}\ZaloMarketing.exe"
 Name: "{autodesktop}\Zalo Marketing"; Filename: "{app}\ZaloMarketing.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\ZaloMarketing.exe"; Description: "{cm:LaunchProgram,Zalo Marketing}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\ZaloMarketing.exe"; Description: "{cm:LaunchProgram,Zalo Marketing}"; Flags: nowait postinstall

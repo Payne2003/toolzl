@@ -9,6 +9,7 @@ on:
       - "packaging/**"
       - "run_app.py"
       - "requirements*.txt"
+      - "CHANGELOG.md"
       - "tests/**"
       - "pyproject.toml"
       - ".github/workflows/build-windows.yml"
@@ -39,7 +40,12 @@ jobs:
       - name: Read version
         id: ver
         shell: bash
-        run: echo "version=$(python -c 'import zalo_marketing as z; print(z.__version__)')" >> "$GITHUB_OUTPUT"
+        run: |
+          v=$(python -c 'import zalo_marketing as z; print(z.__version__)')
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/v* && "${GITHUB_REF#refs/tags/v}" != "$v" ]]; then
+            echo "::error::Tag ${GITHUB_REF#refs/tags/} không khớp __version__ = $v"; exit 1
+          fi
 
       - name: Build exe (PyInstaller)
         run: pyinstaller packaging/ZaloMarketing.spec --noconfirm --clean
@@ -73,10 +79,21 @@ jobs:
             dist/ZaloMarketing-Setup-*.exe
             dist/ZaloMarketing-Portable-*.zip
 
+      - name: Release notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          v=${{ steps.ver.outputs.version }}
+          awk -v v="$v" '$0 ~ "^## \\[?"v {f=1; next} /^## / && f {exit} f' CHANGELOG.md > CHANGELOG_RELEASE.md || true
+          [ -s CHANGELOG_RELEASE.md ] || echo "Phiên bản $v" > CHANGELOG_RELEASE.md
+          cat CHANGELOG_RELEASE.md
+
       - name: Publish release (on tag)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          name: Zalo Marketing v${{ steps.ver.outputs.version }}
+          body_path: CHANGELOG_RELEASE.md
           files: |
             dist/ZaloMarketing-Setup-*.exe
             dist/ZaloMarketing-Portable-*.zip

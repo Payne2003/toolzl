@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 
@@ -46,12 +46,16 @@ def normalize_body(body: str) -> str:
     return "\n".join(line.rstrip() for line in body.replace("\r\n", "\n").strip().split("\n"))
 
 
-def content_hash(body: str) -> str:
-    """Băm nội dung gửi đi (đã chuẩn hóa) — dùng để khóa phiên bản và chống gửi trùng.
+def content_hash(body: str, attachment_hashes: list[str] | tuple[str, ...] = ()) -> str:
+    """Băm nội dung gửi đi (chữ đã chuẩn hóa + mã băm các tệp đính kèm theo thứ tự)
+    — dùng để khóa phiên bản và chống gửi trùng.
 
     Tiêu đề chỉ là nhãn nội bộ nên không nằm trong mã băm.
     """
-    return hashlib.sha256(normalize_body(body).encode("utf-8")).hexdigest()
+    payload = normalize_body(body)
+    if attachment_hashes:
+        payload += "\n\x00attachments:" + ",".join(attachment_hashes)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 @dataclass
@@ -69,6 +73,7 @@ class Post:
     approved_at: str | None = None
     approved_hash: str | None = None
     review_note: str | None = None
+    attachments: list = field(default_factory=list)
 
     @property
     def is_locked(self) -> bool:

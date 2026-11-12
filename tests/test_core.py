@@ -328,3 +328,70 @@ def test_submit_blocked_with_unfilled_placeholders(svc):
     p = svc.posts.create("KM", "Bạn đang gặp {van_de}?", "an")
     with pytest.raises(ApprovalError):
         svc.posts.submit(p.id, "an")
+
+
+# ------------------------------------------------------------- attachments
+def _img(tmp_path, name="a.png", data=b"\x89PNG fake"):
+    p = tmp_path / name
+    p.write_bytes(data)
+    return p
+
+
+def test_media_store_rejects_bad_files(svc, tmp_path):
+    bad = tmp_path / "x.exe"
+    bad.write_bytes(b"MZ")
+    with pytest.raises(ValidationError):
+        svc.media.add(bad)
+    with pytest.raises(ValidationError):
+        svc.media.add(_img(tmp_path, "empty.jpg", b""))
+    att = svc.media.add(_img(tmp_path))
+    assert att["kind"] == "image" and svc.media.path(att).exists()
+
+
+def test_attachments_are_part_of_version_lock(svc, tmp_path):
+    a1 = svc.media.add(_img(tmp_path, "a.png", b"one"))
+    a2 = svc.media.add(_img(tmp_path, "b.mp4", b"two"))
+    p = svc.posts.create("KM", "Nội dung", "an", attachments=[a1])
+    svc.posts.submit(p.id, "an")
+    p = svc.posts.approve(p.id, "binh")
+    # sửa chữ không đổi, chỉ thêm video → phiên bản mới, mất duyệt
+    p2 = svc.posts.edit(p.id, p.title, p.body, "an", attachments=[a1, a2])
+    assert p2.version == 2 and not p2.approval_valid and len(p2.attachments) == 2
+    assert svc.posts.versions(p.id)[0]["attachments"].count("sha256") == 2
+    # edit không truyền attachments → giữ nguyên tệp
+    p3 = svc.posts.edit(p.id, p.title, "Nội dung mới", "an")
+    assert len(p3.attachments) == 2
+
+
+def test_handoff_includes_files_and_blocks_missing(svc, tmp_path):
+    att = svc.media.add(_img(tmp_path))
+    p = svc.posts.create("KM", "Có ảnh", "an", attachments=[att])
+    svc.posts.submit(p.id, "an")
+    svc.posts.approve(p.id, "binh")
+    g = ok_group(svc)
+    (j1,) = svc.dispatcher.enqueue(p.id, [g.id], "an").created
+    pkg = svc.dispatcher.handoff(j1, "an")
+    from pathlib import Path
+    assert [Path(x).name for x in pkg.attachments] == ["a.png"]  # bản sao mang tên gốc
+    assert Path(pkg.attachments[0]).read_bytes() == svc.media.path(att).read_bytes()
+    svc.dispatcher.skip(j1, "an", "test")
+    svc.media.path(att).unlink()
+    g2 = ok_group(svc, "B", "https://zalo.me/g/b2")
+    (j2,) = svc.dispatcher.enqueue(p.id, [g2.id], "an").created
+    with pytest.raises(GateBlocked) as ei:
+        svc.dispatcher.handoff(j2, "an")
+    assert "Thiếu tệp" in ei.value.reasons[0]
+
+
+def test_legacy_db_gets_attachments_column(tmp_path):
+    import sqlite3
+    path = tmp_path / "old.db"
+    con = sqlite3.connect(path)
+    con.executescript("CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT, body TEXT, status TEXT, version INT,"
+                      " content_hash TEXT, author TEXT, created_at TEXT, updated_at TEXT, approved_by TEXT,"
+                      " approved_at TEXT, approved_hash TEXT, review_note TEXT);")
+    con.close()
+    s = Services(path)
+    cols = {r["name"] for r in s.db.query("PRAGMA table_info(posts)")}
+    assert "attachments" in cols and (tmp_path / "media").is_dir()
+    s.close()

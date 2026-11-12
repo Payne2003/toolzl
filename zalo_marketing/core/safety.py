@@ -164,6 +164,8 @@ class SafetyGate:
                 reasons.append("Nhóm chưa được Zalo xác nhận quyền truy cập qua API")
             if self.api_publisher is None or not self.api_publisher.is_configured():
                 reasons.append("Chưa cấu hình adapter Official API")
+            if post is not None and (post["attachments"] or "[]") != "[]":
+                reasons.append("Kênh Official API chưa hỗ trợ ảnh / video — hãy dùng bàn giao thủ công")
 
         waiting = not_due and len(reasons) == 1
         return GateResult(ok=not reasons, reasons=reasons, waiting=waiting)

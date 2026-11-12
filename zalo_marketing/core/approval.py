@@ -7,7 +7,10 @@ Quy trình:  draft ──submit──> pending ──approve──> approved (kh
 
 from __future__ import annotations
 
+import json
+
 from .audit import AuditLog
+from .media import validate_attachments
 from .db import Database
 from .errors import ApprovalError, NotFound, ValidationError
 from .models import PENDING_JOB_STATUSES, JobStatus, Post, PostStatus, content_hash, normalize_body
@@ -30,6 +33,7 @@ def _row_to_post(r) -> Post:
         approved_at=r["approved_at"],
         approved_hash=r["approved_hash"],
         review_note=r["review_note"],
+        attachments=json.loads(r["attachments"] or "[]"),
     )
 
 
@@ -77,29 +81,32 @@ class ApprovalEngine:
             "SELECT * FROM post_versions WHERE post_id = ? ORDER BY version DESC", (post_id,))]
 
     # ---------------------------------------------------------------- write
-    def create(self, title: str, body: str, author: str) -> Post:
+    def create(self, title: str, body: str, author: str, attachments: list[dict] | None = None) -> Post:
         title, body = _validate(title, body)
-        h = content_hash(body)
+        atts = validate_attachments(attachments)
+        h = content_hash(body, [a["sha256"] for a in atts])
         now = self.db.now_iso()
         with self.db.transaction():
             cur = self.db.execute(
-                "INSERT INTO posts(title, body, status, version, content_hash, author, created_at, updated_at) "
-                "VALUES (?, ?, 'draft', 1, ?, ?, ?, ?)",
-                (title, body, h, author, now, now),
+                "INSERT INTO posts(title, body, status, version, content_hash, author, created_at, updated_at, "
+                "attachments) VALUES (?, ?, 'draft', 1, ?, ?, ?, ?, ?)",
+                (title, body, h, author, now, now, json.dumps(atts)),
             )
             pid = int(cur.lastrowid)
-            self._snapshot(pid, 1, title, body, h, author, now)
-            self.audit.record(author, "post.create", "post", pid, version=1, hash=h[:12])
+            self._snapshot(pid, 1, title, body, h, author, now, atts)
+            self.audit.record(author, "post.create", "post", pid, version=1, hash=h[:12], attachments=len(atts))
         return self.get(pid)
 
-    def edit(self, post_id: int, title: str, body: str, actor: str) -> Post:
+    def edit(self, post_id: int, title: str, body: str, actor: str,
+             attachments: list[dict] | None = None) -> Post:
         """Sửa nội dung. Nếu nội dung đã duyệt/đang chờ duyệt bị thay đổi:
         tạo phiên bản mới, hủy phê duyệt và hủy các lệnh đăng đang chờ."""
         post = self.get(post_id)
         if post.status == PostStatus.ARCHIVED:
             raise ApprovalError("Nội dung đã lưu trữ, không thể sửa.")
         title, body = _validate(title, body)
-        h = content_hash(body)
+        atts = post.attachments if attachments is None else validate_attachments(attachments)
+        h = content_hash(body, [a["sha256"] for a in atts])
         now = self.db.now_iso()
 
         with self.db.transaction():
@@ -113,10 +120,10 @@ class ApprovalEngine:
             self.db.execute(
                 "UPDATE posts SET title = ?, body = ?, content_hash = ?, version = ?, status = 'draft', "
                 "approved_by = NULL, approved_at = NULL, approved_hash = NULL, review_note = NULL, "
-                "updated_at = ? WHERE id = ?",
-                (title, body, h, new_version, now, post_id),
+                "attachments = ?, updated_at = ? WHERE id = ?",
+                (title, body, h, new_version, json.dumps(atts), now, post_id),
             )
-            self._snapshot(post_id, new_version, title, body, h, actor, now)
+            self._snapshot(post_id, new_version, title, body, h, actor, now, atts)
             reason = None
             if post.status in (PostStatus.APPROVED, PostStatus.PENDING):
                 reason = "Nội dung thay đổi sau khi gửi duyệt/đã duyệt — cần duyệt lại"
@@ -209,11 +216,11 @@ class ApprovalEngine:
         return self.get(post_id)
 
     # -------------------------------------------------------------- helpers
-    def _snapshot(self, post_id, version, title, body, h, actor, now) -> None:
+    def _snapshot(self, post_id, version, title, body, h, actor, now, atts=()) -> None:
         self.db.execute(
-            "INSERT INTO post_versions(post_id, version, title, body, content_hash, created_by, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (post_id, version, title, body, h, actor, now),
+            "INSERT INTO post_versions(post_id, version, title, body, content_hash, created_by, created_at, "
+            "attachments) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (post_id, version, title, body, h, actor, now, json.dumps(list(atts))),
         )
 
     def _cancel_active_jobs(self, post_id: int, actor: str, reason: str) -> None:

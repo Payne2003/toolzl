@@ -55,12 +55,14 @@ class Dispatcher:
         posts: ApprovalEngine,
         groups: GroupRepository,
         api_publisher: OfficialApiPublisher | None = None,
+        media=None,
     ):
         self.db = db
         self.audit = audit
         self.posts = posts
         self.groups = groups
         self.api_publisher = api_publisher or UnconfiguredPublisher()
+        self.media = media
         self.gate = SafetyGate(db, self.api_publisher)
 
     # ---------------------------------------------------------------- query
@@ -199,6 +201,11 @@ class Dispatcher:
         if job.channel != Channel.MANUAL:
             raise BotError("Lệnh này dùng kênh Official API, không bàn giao thủ công.")
         res = self.gate.evaluate(job)
+        post = self.posts.get(job.post_id)
+        if res.ok and post.attachments and self.media is not None:
+            problems = self.media.verify(post.attachments)
+            if problems:
+                res.ok, res.reasons = False, problems
         if not res.ok:
             with self.db.transaction():
                 if not res.waiting and job.status != JobStatus.BLOCKED:
@@ -206,7 +213,6 @@ class Dispatcher:
                                     (res.summary, self.db.now_iso(), job.id))
                 self.audit.record(actor, "gate.deny_handoff", "job", job.id, reason=res.summary)
             raise GateBlocked(res.reasons)
-        post = self.posts.get(job.post_id)
         group = self.groups.get(job.group_id)
         now = self.db.now_iso()
         with self.db.transaction():
@@ -217,7 +223,10 @@ class Dispatcher:
             )
             self.audit.record(actor, "job.handoff", "job", job.id, group=group.name,
                               version=job.post_version, hash=job.content_hash[:12])
-        return HandoffPackage(job_id=job.id, group_name=group.name, group_link=group.link, text=post.body)
+        files = (self.media.export(post.attachments, f"job{job.id}")
+                 if self.media is not None and post.attachments else [])
+        return HandoffPackage(job_id=job.id, group_name=group.name, group_link=group.link, text=post.body,
+                              attachments=files)
 
     def confirm_sent(self, job_id: int, actor: str, note: str | None = None) -> Job:
         job = self.get(job_id)

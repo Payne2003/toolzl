@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QDateTime, Qt, QUrl, Signal
+import sys
+from pathlib import Path
+
+from PySide6.QtCore import QDateTime, QMimeData, Qt, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDateTimeEdit, QDialog, QHBoxLayout, QInputDialog, QListWidget, QListWidgetItem,
@@ -13,6 +16,8 @@ from ..core.errors import GateBlocked
 from ..core.models import Channel, JobStatus, PostStatus
 from ..core.publishers import HandoffPackage
 from ..core.services import Services
+from ..core.media import IMAGE_EXTS
+from .attachments import AttachmentList
 from .theme import button, card, label
 from .common import CHANNEL_VI, JOB_STATUS_VI, fill_table, fmt_ts, guarded, make_table, selected_id, show_error
 
@@ -31,20 +36,25 @@ class HandoffDialog(QDialog):
         self.setWindowTitle(f"Bàn giao thủ công — {pkg.group_name}")
         self.resize(620, 560)
 
+        n = len(pkg.attachments)
         title = label(f"Gửi vào nhóm: {pkg.group_name}", "PageTitle")
         opened = ("Zalo đã được mở tới nhóm." if pkg.group_link
                   else "Nhóm chưa có link — hãy tự mở nhóm trong Zalo.")
+        media_steps = (
+            f"<li>Bấm <b>Chép {n} ảnh/video</b> rồi dán (Ctrl+V) vào khung chat — hoặc kéo các tệp ở dưới "
+            "thả thẳng vào Zalo.</li>" if n else "")
         steps = label(
-            f"<b>✓ Nội dung đã được chép vào clipboard.</b> {opened}"
+            f"<b>✓ Chữ đã được chép vào clipboard.</b> {opened}"
             "<ol style='margin-left:-20px'>"
             f"<li>Kiểm tra đúng nhóm <b>{pkg.group_name}</b>.</li>"
             "<li>Dán (Ctrl+V) và đọc lại nội dung.</li>"
+            f"{media_steps}"
             "<li>Tự bấm <b>Gửi</b> trong Zalo.</li>"
             "<li>Quay lại đây và xác nhận kết quả.</li></ol>", "InfoBox", wrap=True)
         text = QPlainTextEdit(pkg.text)
         text.setReadOnly(True)
 
-        btn_copy = button("Chép lại", "ghost", lambda: QGuiApplication.clipboard().setText(pkg.text))
+        btn_copy = button("Chép chữ", "ghost", lambda: QGuiApplication.clipboard().setText(pkg.text))
         btn_open = button("Mở lại nhóm", "ghost", lambda: QDesktopServices.openUrl(QUrl(pkg.group_link)))
         btn_open.setEnabled(bool(pkg.group_link))
 
@@ -61,9 +71,25 @@ class HandoffDialog(QDialog):
         lay.addWidget(text, 1)
         row = QHBoxLayout()
         row.addWidget(btn_copy)
+        if n:
+            row.addWidget(button(f"Chép {n} ảnh/video", "primary", self.copy_files))
+            row.addWidget(button("Mở thư mục tệp", "ghost", self.open_folder))
         row.addWidget(btn_open)
         row.addStretch()
         lay.addLayout(row)
+        if n:
+            self.files = AttachmentList()
+            entries = []
+            for path in pkg.attachments:
+                pth = Path(path)
+                kind = "image" if pth.suffix.lower() in IMAGE_EXTS else "video"
+                size = pth.stat().st_size if pth.exists() else 0
+                entries.append((path, {"name": pth.name, "kind": kind, "size": size}))
+            self.files.set_items(entries)
+            self.files.setToolTip("Kéo tệp từ đây thả thẳng vào khung chat Zalo")
+            lay.addWidget(label("ẢNH / VIDEO — KÉO THẢ VÀO ZALO HOẶC BẤM \"CHÉP\"", "StatLabel"))
+            lay.addWidget(self.files)
+            self.resize(660, 700)
         foot = QHBoxLayout()
         foot.addWidget(b_skip)
         foot.addStretch()
@@ -71,6 +97,20 @@ class HandoffDialog(QDialog):
         foot.addWidget(b_sent)
         lay.addLayout(foot)
         b_sent.setDefault(True)
+
+    def copy_files(self) -> None:
+        """Đưa danh sách tệp vào clipboard (Windows: dán được trực tiếp vào ứng dụng chat)."""
+        md = QMimeData()
+        md.setUrls([QUrl.fromLocalFile(p) for p in self.pkg.attachments])
+        QGuiApplication.clipboard().setMimeData(md)
+
+    def open_folder(self) -> None:
+        first = Path(self.pkg.attachments[0])
+        if sys.platform == "win32":
+            import subprocess
+            subprocess.Popen(["explorer", "/select,", str(first)])
+        else:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(first.parent)))
 
     def _done(self, choice: int) -> None:
         self.choice = choice
@@ -291,11 +331,14 @@ class QueueTab(QWidget):
             return
         post = self.svc.posts.get(job.post_id)
         group = self.svc.groups.get(job.group_id)
-        body = post.body
+        body, atts = post.body, post.attachments
         if post.content_hash != job.content_hash:
             v = next((v for v in self.svc.posts.versions(post.id) if v["content_hash"] == job.content_hash), None)
-            body = v["body"] if v else body
-        self._confirm(HandoffPackage(job.id, group.name, group.link, body))
+            if v:
+                import json
+                body, atts = v["body"], json.loads(v["attachments"] or "[]")
+        files = self.svc.media.export(atts, f"job{job.id}") if atts else []
+        self._confirm(HandoffPackage(job.id, group.name, group.link, body, files))
 
     @guarded
     def send_api(self):
