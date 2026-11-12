@@ -32,12 +32,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--db", type=Path, default=None, help="Đường dẫn file SQLite")
     args = parser.parse_args(argv)
 
+    if sys.platform == "win32":
+        # Để Windows hiển thị đúng icon của ứng dụng trên thanh taskbar.
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("ZaloMarketing.GroupPosting")
+        except Exception:  # noqa: BLE001
+            pass
+
+    from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication
 
     from .ui.main_window import MainWindow
 
     app = QApplication(sys.argv[:1])
     app.setApplicationName("ZaloMarketing")
+    app.setWindowIcon(QIcon(str(Path(__file__).parent / "ui" / "assets" / "icon.png")))
     from .ui.theme import apply_theme
     apply_theme(app)
 

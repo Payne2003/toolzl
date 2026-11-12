@@ -34,7 +34,29 @@ SQLite Audit Log                      Trạng thái · Người phê duyệt · 
 | Manual Handoff / Official API | `zalo_marketing/core/dispatcher.py`, `publishers.py` |
 | SQLite + Audit Log | `zalo_marketing/core/db.py`, `audit.py` |
 
-## Cài đặt & chạy
+## Bản Windows
+
+**Tải về:** vào tab **Actions** của repository → workflow **Build Windows** → lần chạy mới nhất →
+mục *Artifacts* → `ZaloMarketing-Windows-<version>`. Trong đó có:
+
+- `ZaloMarketing-Setup-<version>.exe` — bộ cài (không cần quyền Administrator, tạo shortcut Start Menu/Desktop).
+- `ZaloMarketing-Portable-<version>.zip` — giải nén và chạy `ZaloMarketing.exe`, không cần cài đặt.
+
+Khi push tag dạng `v1.0.0`, workflow tự tạo GitHub Release đính kèm hai file trên.
+
+> Bản build chưa được ký số (code signing), nên lần đầu chạy Windows SmartScreen có thể cảnh báo
+> → bấm **More info → Run anyway**.
+
+**Tự build trên máy Windows:** cài Python 3.10+ (và [Inno Setup 6](https://jrsoftware.org/isinfo.php)
+nếu muốn tạo bộ cài), rồi chạy:
+
+```bat
+build_windows.bat
+```
+
+Kết quả: `dist\ZaloMarketing\ZaloMarketing.exe` và (nếu có Inno Setup) `dist\ZaloMarketing-Setup-1.0.0.exe`.
+
+## Cài đặt & chạy từ mã nguồn
 
 ```bash
 python -m venv .venv
