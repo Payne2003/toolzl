@@ -9,6 +9,8 @@ on:
       - "packaging/**"
       - "run_app.py"
       - "requirements*.txt"
+      - "tests/**"
+      - "pyproject.toml"
       - ".github/workflows/build-windows.yml"
   workflow_dispatch:
 
@@ -32,7 +34,7 @@ jobs:
           pip install -r requirements-dev.txt pyinstaller
 
       - name: Run tests
-        run: pytest -q
+        run: python -m pytest -q
 
       - name: Read version
         id: ver
