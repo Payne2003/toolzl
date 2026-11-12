@@ -38,7 +38,8 @@ def main(argv: list[str] | None = None) -> int:
 
     app = QApplication(sys.argv[:1])
     app.setApplicationName("ZaloMarketing")
-    app.setStyle("Fusion")
+    from .ui.theme import apply_theme
+    apply_theme(app)
 
     svc = Services(args.db or default_db_path(), api_publisher=build_api_publisher())
     win = MainWindow(svc)

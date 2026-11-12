@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QMessageBox, QTableWidget, QTableWidgetItem, QWidget, QHeaderView, QAbstractItemView
 
 from ..core.db import from_iso
@@ -13,7 +14,7 @@ from ..core.errors import BotError, GateBlocked
 POST_STATUS_VI = {
     "draft": "Nháp",
     "pending": "Chờ duyệt",
-    "approved": "Đã duyệt 🔒",
+    "approved": "Đã duyệt",
     "rejected": "Bị từ chối",
     "archived": "Lưu trữ",
 }
@@ -41,9 +42,22 @@ def local_now() -> datetime:
     return datetime.now().astimezone()
 
 
-def make_table(headers: list[str], parent: QWidget | None = None) -> QTableWidget:
+def make_table(headers: list[str], badge_cols: tuple[int, ...] = (), parent: QWidget | None = None) -> QTableWidget:
+    """Bảng chỉ đọc; các cột trong `badge_cols` được vẽ thành huy hiệu màu.
+    Cột cuối giãn theo chiều rộng còn lại."""
+    from .theme import BadgeDelegate
+
     t = QTableWidget(0, len(headers), parent)
-    t.setHorizontalHeaderLabels(headers)
+    t.setHorizontalHeaderLabels([h.upper() for h in headers])
+    t.setShowGrid(False)
+    t.setFocusPolicy(Qt.NoFocus)
+    t.setWordWrap(False)
+    t.verticalHeader().setDefaultSectionSize(42)
+    t.horizontalHeader().setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+    t.horizontalHeader().setHighlightSections(False)
+    delegate = BadgeDelegate(t)
+    for c in badge_cols:
+        t.setItemDelegateForColumn(c, delegate)
     t.setEditTriggers(QAbstractItemView.NoEditTriggers)
     t.setSelectionBehavior(QAbstractItemView.SelectRows)
     t.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -51,6 +65,9 @@ def make_table(headers: list[str], parent: QWidget | None = None) -> QTableWidge
     t.verticalHeader().setVisible(False)
     t.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
     t.horizontalHeader().setStretchLastSection(True)
+    t.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+    t.horizontalHeader().setMinimumSectionSize(48)
+    t.setTextElideMode(Qt.ElideRight)
     return t
 
 
@@ -66,8 +83,12 @@ def fill_table(table: QTableWidget, rows: list[list], ids: list[int] | None = No
                 item.setToolTip(text)
             if c == 0 and ids is not None:
                 item.setData(Qt.UserRole, ids[r])
+                item.setForeground(QColor("#8A94A6"))
             table.setItem(r, c, item)
     table.resizeColumnsToContents()
+    header = table.horizontalHeader()
+    for c in range(table.columnCount() - 1):
+        header.resizeSection(c, min(header.sectionSize(c) + 8, 260))
     if selected is not None:
         select_id(table, selected)
 

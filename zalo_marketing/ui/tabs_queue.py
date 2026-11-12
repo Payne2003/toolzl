@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QDateTime, Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QGuiApplication
+from PySide6.QtGui import QColor, QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDateTimeEdit, QDialog, QDialogButtonBox, QGroupBox, QHBoxLayout, QInputDialog,
-    QLabel, QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QVBoxLayout,
-    QWidget,
+    QCheckBox, QComboBox, QDateTimeEdit, QDialog, QHBoxLayout, QInputDialog, QListWidget, QListWidgetItem,
+    QMessageBox, QPlainTextEdit, QSplitter, QVBoxLayout, QWidget,
 )
 
 from ..core.errors import GateBlocked
 from ..core.models import Channel, JobStatus, PostStatus
 from ..core.publishers import HandoffPackage
 from ..core.services import Services
+from .theme import button, card, label
 from .common import CHANNEL_VI, JOB_STATUS_VI, fill_table, fmt_ts, guarded, make_table, selected_id, show_error
 
 ACTIVE = (JobStatus.QUEUED.value, JobStatus.BLOCKED.value, JobStatus.HANDED_OFF.value)
@@ -29,43 +29,48 @@ class HandoffDialog(QDialog):
         self.pkg = pkg
         self.choice = self.RETURN
         self.setWindowTitle(f"Bàn giao thủ công — {pkg.group_name}")
-        self.resize(560, 460)
+        self.resize(620, 560)
 
-        steps = QLabel(
-            "<b>Nội dung đã được chép vào clipboard.</b><br>"
-            + ("Zalo đã được mở tới nhóm. " if pkg.group_link else "Nhóm chưa có link — hãy tự mở nhóm trong Zalo. ")
-            + "<ol><li>Kiểm tra đúng nhóm <b>{}</b>.</li>"
-              "<li>Dán (Ctrl+V), đọc lại nội dung.</li>"
-              "<li>Tự bấm <b>Gửi</b> trong Zalo.</li>"
-              "<li>Quay lại đây và xác nhận kết quả.</li></ol>".format(pkg.group_name)
-        )
-        steps.setWordWrap(True)
+        title = label(f"Gửi vào nhóm: {pkg.group_name}", "PageTitle")
+        opened = ("Zalo đã được mở tới nhóm." if pkg.group_link
+                  else "Nhóm chưa có link — hãy tự mở nhóm trong Zalo.")
+        steps = label(
+            f"<b>✓ Nội dung đã được chép vào clipboard.</b> {opened}"
+            "<ol style='margin-left:-20px'>"
+            f"<li>Kiểm tra đúng nhóm <b>{pkg.group_name}</b>.</li>"
+            "<li>Dán (Ctrl+V) và đọc lại nội dung.</li>"
+            "<li>Tự bấm <b>Gửi</b> trong Zalo.</li>"
+            "<li>Quay lại đây và xác nhận kết quả.</li></ol>", "InfoBox", wrap=True)
         text = QPlainTextEdit(pkg.text)
         text.setReadOnly(True)
 
-        btn_copy = QPushButton("📋 Chép lại")
-        btn_copy.clicked.connect(lambda: QGuiApplication.clipboard().setText(pkg.text))
-        btn_open = QPushButton("🔗 Mở lại nhóm")
+        btn_copy = button("Chép lại", "ghost", lambda: QGuiApplication.clipboard().setText(pkg.text))
+        btn_open = button("Mở lại nhóm", "ghost", lambda: QDesktopServices.openUrl(QUrl(pkg.group_link)))
         btn_open.setEnabled(bool(pkg.group_link))
-        btn_open.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(pkg.group_link)))
 
-        box = QDialogButtonBox()
-        b_sent = box.addButton("✅ Tôi đã gửi", QDialogButtonBox.AcceptRole)
-        b_ret = box.addButton("↩ Chưa gửi — trả lại hàng đợi", QDialogButtonBox.RejectRole)
-        b_skip = box.addButton("⏭ Bỏ qua lệnh này", QDialogButtonBox.DestructiveRole)
-        b_sent.clicked.connect(lambda: self._done(self.SENT))
-        b_ret.clicked.connect(lambda: self._done(self.RETURN))
-        b_skip.clicked.connect(lambda: self._done(self.SKIP))
+        b_sent = button("✓  Tôi đã gửi", "success", lambda: self._done(self.SENT))
+        b_ret = button("Chưa gửi — trả lại hàng đợi", slot=lambda: self._done(self.RETURN))
+        b_skip = button("Bỏ qua lệnh", "ghost", lambda: self._done(self.SKIP))
 
         lay = QVBoxLayout(self)
+        lay.setContentsMargins(24, 22, 24, 20)
+        lay.setSpacing(12)
+        lay.addWidget(title)
         lay.addWidget(steps)
+        lay.addWidget(label("NỘI DUNG", "StatLabel"))
         lay.addWidget(text, 1)
         row = QHBoxLayout()
         row.addWidget(btn_copy)
         row.addWidget(btn_open)
         row.addStretch()
         lay.addLayout(row)
-        lay.addWidget(box)
+        foot = QHBoxLayout()
+        foot.addWidget(b_skip)
+        foot.addStretch()
+        foot.addWidget(b_ret)
+        foot.addWidget(b_sent)
+        lay.addLayout(foot)
+        b_sent.setDefault(True)
 
     def _done(self, choice: int) -> None:
         self.choice = choice
@@ -87,72 +92,68 @@ class QueueTab(QWidget):
         # --- Khu xếp lệnh
         self.post_combo = QComboBox()
         self.group_list = QListWidget()
-        self.group_list.setMaximumHeight(160)
+        self.group_list.setObjectName("Checklist")
+        self.group_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.group_list.setTextElideMode(Qt.ElideRight)
         self.channel = QComboBox()
         self.channel.addItem(CHANNEL_VI["manual"], Channel.MANUAL.value)
         self.channel.addItem(CHANNEL_VI["api"], Channel.OFFICIAL_API.value)
-        self.use_schedule = QCheckBox("Hẹn giờ:")
+        self.use_schedule = QCheckBox("Hẹn giờ đăng")
         self.schedule = QDateTimeEdit(QDateTime.currentDateTime().addSecs(3600))
         self.schedule.setCalendarPopup(True)
         self.schedule.setDisplayFormat("dd/MM/yyyy HH:mm")
         self.schedule.setEnabled(False)
         self.use_schedule.toggled.connect(self.schedule.setEnabled)
-        btn_enqueue = QPushButton("➕ Xếp lệnh")
-        btn_enqueue.clicked.connect(self.enqueue)
 
-        enq = QGroupBox("Xếp lệnh đăng (chỉ nội dung đã duyệt · chỉ nhóm được phép)")
-        el = QVBoxLayout(enq)
-        el.addWidget(QLabel("Nội dung:"))
+        enq, el = card("Xếp lệnh đăng", "Chỉ nội dung đã duyệt · chỉ nhóm trong danh sách được phép.")
+        el.addWidget(label("NỘI DUNG ĐÃ DUYỆT", "StatLabel"))
         el.addWidget(self.post_combo)
-        el.addWidget(QLabel("Nhóm:"))
-        el.addWidget(self.group_list)
-        r = QHBoxLayout()
-        r.addWidget(QLabel("Kênh:"))
-        r.addWidget(self.channel)
-        r.addWidget(self.use_schedule)
-        r.addWidget(self.schedule)
-        r.addStretch()
-        r.addWidget(btn_enqueue)
-        el.addLayout(r)
+        el.addWidget(label("NHÓM", "StatLabel"))
+        el.addWidget(self.group_list, 1)
+        el.addWidget(label("KÊNH", "StatLabel"))
+        el.addWidget(self.channel)
+        el.addWidget(self.use_schedule)
+        el.addWidget(self.schedule)
+        el.addWidget(button("+  Xếp lệnh", "primary", self.enqueue))
 
         # --- Bảng lệnh
-        self.table = make_table(["#", "Nội dung", "Nhóm", "Kênh", "Trạng thái", "Hẹn giờ", "Lý do / ghi chú"])
+        self.table = make_table(["#", "Nội dung", "Nhóm", "Kênh", "Trạng thái", "Hẹn giờ", "Lý do / ghi chú"],
+                                badge_cols=(3, 4))
         self.table.itemSelectionChanged.connect(self._update_buttons)
         self.table.doubleClicked.connect(self.check_selected)
 
-        self.btn_next = QPushButton("▶ Bàn giao lệnh tiếp theo")
-        self.btn_next.setStyleSheet("font-weight: bold; padding: 6px 12px;")
-        self.btn_next.clicked.connect(self.handoff_next)
-        self.btn_handoff = QPushButton("📋 Bàn giao lệnh đã chọn")
-        self.btn_handoff.clicked.connect(self.handoff_selected)
-        self.btn_resume = QPushButton("⏯ Xác nhận lệnh đã bàn giao")
-        self.btn_resume.clicked.connect(self.resume_handed_off)
-        self.btn_api = QPushButton("⚡ Gửi qua Official API")
-        self.btn_api.clicked.connect(self.send_api)
-        self.btn_check = QPushButton("🔍 Kiểm tra Safety Gate")
-        self.btn_check.clicked.connect(self.check_selected)
-        self.btn_cancel = QPushButton("🗑 Hủy lệnh")
-        self.btn_cancel.clicked.connect(self.cancel)
-        btn_refresh = QPushButton("⟳ Đánh giá lại")
-        btn_refresh.clicked.connect(self.reload)
+        self.btn_next = button("▶  Bàn giao lệnh tiếp theo", "primary", self.handoff_next)
+        self.btn_handoff = button("Bàn giao lệnh đã chọn", slot=self.handoff_selected)
+        self.btn_resume = button("Xác nhận kết quả", slot=self.resume_handed_off)
+        self.btn_api = button("Gửi qua API", slot=self.send_api)
+        self.btn_check = button("Kiểm tra Safety Gate", slot=self.check_selected)
+        self.btn_cancel = button("Hủy lệnh", "ghost", self.cancel)
+        btn_refresh = button("⟳  Đánh giá lại", "ghost", self.reload)
 
+        jobs_card, jl = card()
+        head = QHBoxLayout()
+        head.addWidget(label("Lệnh đang hoạt động", "CardTitle"))
+        head.addStretch()
+        head.addWidget(btn_refresh)
+        head.addWidget(self.btn_next)
+        jl.addLayout(head)
         actions = QHBoxLayout()
-        for b in (self.btn_next, self.btn_handoff, self.btn_resume, self.btn_api, self.btn_check,
-                  self.btn_cancel, btn_refresh):
+        for b in (self.btn_handoff, self.btn_resume, self.btn_api, self.btn_check):
             actions.addWidget(b)
         actions.addStretch()
+        actions.addWidget(self.btn_cancel)
+        jl.addLayout(actions)
+        jl.addWidget(self.table, 1)
+        jl.addWidget(label("Mẹo: nhấp đúp vào một lệnh để xem Safety Gate kiểm tra những gì.", "Muted"))
 
-        bottom = QWidget()
-        bl = QVBoxLayout(bottom)
-        bl.setContentsMargins(0, 0, 0, 0)
-        bl.addLayout(actions)
-        bl.addWidget(self.table)
-
-        split = QSplitter(Qt.Vertical)
+        split = QSplitter()
+        split.setHandleWidth(16)
         split.addWidget(enq)
-        split.addWidget(bottom)
-        split.setSizes([260, 440])
-        QVBoxLayout(self).addWidget(split)
+        split.addWidget(jobs_card)
+        split.setSizes([330, 760])
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(split)
         self.reload()
 
     # ----------------------------------------------------------------- data
@@ -171,8 +172,17 @@ class QueueTab(QWidget):
         self.group_list.clear()
         for g in self.svc.groups.list():
             usable = g.allowed and g.can_post and g.status.value == "active"
-            label = g.name + ("" if usable else "  (chưa đủ điều kiện)")
-            it = QListWidgetItem(label)
+            it = QListWidgetItem(g.name if usable else f"{g.name}  ⚠")
+            if not usable:
+                why = []
+                if not g.allowed:
+                    why.append("chưa nằm trong danh sách được phép")
+                if not g.can_post:
+                    why.append("chưa xác nhận quyền đăng")
+                if g.status.value != "active":
+                    why.append(f"đang {g.status.value}")
+                it.setToolTip("Chưa đủ điều kiện: " + ", ".join(why))
+                it.setForeground(QColor("#8A94A6"))
             it.setData(Qt.UserRole, g.id)
             it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
             it.setCheckState(Qt.Checked if g.id in checked else Qt.Unchecked)

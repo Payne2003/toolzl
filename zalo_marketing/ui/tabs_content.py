@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QFormLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
-    QPushButton, QSplitter, QVBoxLayout, QWidget,
+    QHBoxLayout, QInputDialog, QLineEdit, QMessageBox, QPlainTextEdit, QSplitter, QVBoxLayout, QWidget,
 )
 
 from ..core.approval import MAX_BODY_CHARS
 from ..core.models import PostStatus, content_hash
 from ..core.services import Services
 from .common import POST_STATUS_VI, fill_table, fmt_ts, guarded, make_table, selected_id
+from .theme import button, card, label
 
 
 class ContentTab(QWidget):
@@ -23,7 +23,7 @@ class ContentTab(QWidget):
         self.operator = operator  # callable trả về tên người dùng hiện tại
         self.current_id: int | None = None
 
-        self.table = make_table(["#", "Tiêu đề", "Trạng thái", "Phiên bản", "Cập nhật"])
+        self.table = make_table(["#", "Tiêu đề", "Trạng thái", "Phiên bản", "Cập nhật"], badge_cols=(2,))
         self.table.itemSelectionChanged.connect(self._load_selected)
 
         self.title_edit = QLineEdit()
@@ -31,44 +31,50 @@ class ContentTab(QWidget):
         self.body_edit = QPlainTextEdit()
         self.body_edit.setPlaceholderText("Nội dung sẽ được chép để bạn dán vào nhóm Zalo…")
         self.body_edit.textChanged.connect(self._update_counter)
-        self.counter = QLabel()
-        self.status_label = QLabel()
-        self.status_label.setWordWrap(True)
+        self.counter = label("", "Muted")
+        self.status_label = label("", "InfoBox", wrap=True)
 
-        btn_new = QPushButton("➕ Nội dung mới")
-        btn_new.clicked.connect(self.new_post)
-        self.btn_save = QPushButton("💾 Lưu")
-        self.btn_save.clicked.connect(self.save)
-        self.btn_submit = QPushButton("📨 Gửi duyệt")
-        self.btn_submit.clicked.connect(self.submit)
-        self.btn_archive = QPushButton("🗄 Lưu trữ")
-        self.btn_archive.clicked.connect(self.archive)
+        self.btn_save = button("Lưu nháp", slot=self.save)
+        self.btn_submit = button("Gửi duyệt  →", "primary", self.submit)
+        self.btn_archive = button("Lưu trữ", "ghost", self.archive)
 
-        form = QFormLayout()
-        form.addRow("Tiêu đề:", self.title_edit)
-        right = QWidget()
-        rl = QVBoxLayout(right)
-        rl.addLayout(form)
-        rl.addWidget(QLabel("Nội dung:"))
+        # Danh sách nội dung
+        left, ll = card()
+        head = QHBoxLayout()
+        head.addWidget(label("Nội dung của bạn", "CardTitle"))
+        head.addStretch()
+        head.addWidget(button("+  Nội dung mới", "primary", self.new_post))
+        ll.addLayout(head)
+        ll.addWidget(self.table, 1)
+
+        # Trình soạn thảo
+        right, rl = card()
+        self.editor_title = label("Bản nháp mới", "CardTitle")
+        rl.addWidget(self.editor_title)
+        rl.addWidget(label("TIÊU ĐỀ", "StatLabel"))
+        rl.addWidget(self.title_edit)
+        row = QHBoxLayout()
+        row.addWidget(label("NỘI DUNG GỬI VÀO NHÓM", "StatLabel"))
+        row.addStretch()
+        row.addWidget(self.counter)
+        rl.addLayout(row)
         rl.addWidget(self.body_edit, 1)
-        rl.addWidget(self.counter)
         rl.addWidget(self.status_label)
         btns = QHBoxLayout()
-        for b in (self.btn_save, self.btn_submit, self.btn_archive):
-            btns.addWidget(b)
+        btns.addWidget(self.btn_archive)
         btns.addStretch()
+        btns.addWidget(self.btn_save)
+        btns.addWidget(self.btn_submit)
         rl.addLayout(btns)
 
-        left = QWidget()
-        ll = QVBoxLayout(left)
-        ll.addWidget(btn_new)
-        ll.addWidget(self.table)
-
         split = QSplitter()
+        split.setHandleWidth(16)
         split.addWidget(left)
         split.addWidget(right)
-        split.setSizes([420, 600])
-        QVBoxLayout(self).addWidget(split)
+        split.setSizes([520, 560])
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(split)
 
         self.reload()
         self.new_post()
@@ -99,9 +105,10 @@ class ContentTab(QWidget):
         self.title_edit.setText(p.title)
         if self.body_edit.toPlainText() != p.body:
             self.body_edit.setPlainText(p.body)
+        self.editor_title.setText(f"Chỉnh sửa #{p.id} · v{p.version}")
         info = f"<b>{POST_STATUS_VI[p.status.value]}</b> · v{p.version} · soạn bởi {p.author}"
         if p.status == PostStatus.APPROVED:
-            info += (f"<br>Duyệt bởi <b>{p.approved_by}</b> lúc {fmt_ts(p.approved_at)}. "
+            info += (f"<br>🔒 Duyệt bởi <b>{p.approved_by}</b> lúc {fmt_ts(p.approved_at)}. "
                      "Nội dung đã khóa — nếu sửa, phần mềm sẽ tạo phiên bản mới và cần duyệt lại.")
         if p.review_note:
             info += f"<br>Ghi chú duyệt: <i>{p.review_note}</i>"
@@ -115,7 +122,8 @@ class ContentTab(QWidget):
         self.table.clearSelection()
         self.title_edit.clear()
         self.body_edit.clear()
-        self.status_label.setText("Bản nháp mới — chưa lưu.")
+        self.editor_title.setText("Bản nháp mới")
+        self.status_label.setText("Bản nháp mới — chưa lưu. Lưu nháp rồi bấm <b>Gửi duyệt</b> để chuyển cho người duyệt.")
         self.btn_submit.setEnabled(False)
         self.btn_archive.setEnabled(False)
 
@@ -175,39 +183,43 @@ class ApprovalTab(QWidget):
         self.operator = operator
         self.viewed_hash: str | None = None
 
-        self.table = make_table(["#", "Tiêu đề", "Trạng thái", "Phiên bản", "Người soạn", "Cập nhật"])
+        self.table = make_table(["#", "Tiêu đề", "Trạng thái", "Phiên bản", "Người soạn", "Cập nhật"],
+                                badge_cols=(2,))
         self.table.itemSelectionChanged.connect(self._load_selected)
         self.preview = QPlainTextEdit()
         self.preview.setReadOnly(True)
-        self.meta = QLabel()
-        self.meta.setWordWrap(True)
+        self.meta = label("", "InfoBox", wrap=True)
         self.note = QLineEdit()
-        self.note.setPlaceholderText("Ghi chú (bắt buộc khi từ chối / thu hồi)")
+        self.note.setPlaceholderText("Ghi chú cho người soạn (bắt buộc khi từ chối / thu hồi)")
 
-        self.btn_approve = QPushButton("✅ Duyệt & khóa phiên bản")
-        self.btn_approve.clicked.connect(self.approve)
-        self.btn_reject = QPushButton("❌ Từ chối")
-        self.btn_reject.clicked.connect(self.reject)
-        self.btn_revoke = QPushButton("↩ Thu hồi phê duyệt")
-        self.btn_revoke.clicked.connect(self.revoke)
+        self.btn_approve = button("✓  Duyệt && khóa phiên bản", "success", self.approve)
+        self.btn_reject = button("Từ chối", "danger", self.reject)
+        self.btn_revoke = button("Thu hồi phê duyệt", slot=self.revoke)
 
-        right = QWidget()
-        rl = QVBoxLayout(right)
+        left, ll = card("Chờ duyệt & đã duyệt")
+        ll.addWidget(self.table, 1)
+
+        right, rl = card("Xem trước")
         rl.addWidget(self.meta)
-        rl.addWidget(QLabel("Nội dung (chỉ đọc — đúng bản sẽ được gửi):"))
+        rl.addWidget(label("NỘI DUNG — ĐÚNG BẢN SẼ ĐƯỢC GỬI", "StatLabel"))
         rl.addWidget(self.preview, 1)
+        rl.addWidget(label("GHI CHÚ", "StatLabel"))
         rl.addWidget(self.note)
         b = QHBoxLayout()
-        for w in (self.btn_approve, self.btn_reject, self.btn_revoke):
-            b.addWidget(w)
+        b.addWidget(self.btn_revoke)
         b.addStretch()
+        b.addWidget(self.btn_reject)
+        b.addWidget(self.btn_approve)
         rl.addLayout(b)
 
         split = QSplitter()
-        split.addWidget(self.table)
+        split.setHandleWidth(16)
+        split.addWidget(left)
         split.addWidget(right)
-        split.setSizes([450, 570])
-        QVBoxLayout(self).addWidget(split)
+        split.setSizes([560, 520])
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(split)
         self.reload()
 
     def reload(self) -> None:
@@ -225,7 +237,7 @@ class ApprovalTab(QWidget):
         pid = selected_id(self.table)
         if pid is None:
             self.preview.clear()
-            self.meta.setText("Chọn một nội dung để xem.")
+            self.meta.setText("Chọn một nội dung ở danh sách bên trái để xem trước.")
             self.viewed_hash = None
             for w in (self.btn_approve, self.btn_reject, self.btn_revoke):
                 w.setEnabled(False)

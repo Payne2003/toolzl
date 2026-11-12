@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
+    QCheckBox, QComboBox, QFileDialog, QFormLayout, QGridLayout, QHBoxLayout, QLineEdit, QMessageBox,
     QSpinBox, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from ..core.services import Services
+from .theme import button, card, label
 from .common import CHANNEL_VI, JOB_STATUS_VI, fill_table, fmt_ts, guarded, make_table
 
 ACTION_VI = {
@@ -33,33 +34,33 @@ class HistoryTab(QWidget):
         self.svc = svc
 
         self.jobs = make_table(["#", "Nội dung", "Phiên bản", "Nhóm", "Kênh", "Trạng thái", "Bàn giao",
-                                "Hoàn tất", "Người xác nhận", "Ghi chú"])
+                                "Hoàn tất", "Người xác nhận", "Ghi chú"], badge_cols=(4, 5))
         self.audit = make_table(["#", "Thời gian", "Người thực hiện", "Hành động", "Đối tượng", "Lý do", "Chi tiết"])
 
         self.action_filter = QComboBox()
+        self.action_filter.setMinimumWidth(240)
         self.action_filter.addItem("Tất cả hành động", None)
         for k, v in ACTION_VI.items():
             self.action_filter.addItem(v, k)
         self.action_filter.currentIndexChanged.connect(self.reload)
-        btn_export = QPushButton("⤓ Xuất CSV")
-        btn_export.clicked.connect(self.export)
-        btn_refresh = QPushButton("⟳ Làm mới")
-        btn_refresh.clicked.connect(self.reload)
+        jobs_card, jl = card()
+        jl.addWidget(self.jobs)
 
-        audit_page = QWidget()
-        al = QVBoxLayout(audit_page)
+        audit_card, al = card()
         row = QHBoxLayout()
         row.addWidget(self.action_filter)
         row.addStretch()
-        row.addWidget(btn_refresh)
-        row.addWidget(btn_export)
+        row.addWidget(button("⟳  Làm mới", "ghost", self.reload))
+        row.addWidget(button("Xuất CSV", "primary", self.export))
         al.addLayout(row)
         al.addWidget(self.audit)
 
         tabs = QTabWidget()
-        tabs.addTab(self.jobs, "Lịch sử đăng")
-        tabs.addTab(audit_page, "Nhật ký kiểm toán")
-        QVBoxLayout(self).addWidget(tabs)
+        tabs.addTab(jobs_card, "Lịch sử đăng")
+        tabs.addTab(audit_card, "Nhật ký kiểm toán")
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(tabs)
         self.reload()
 
     def reload(self, *_):
@@ -109,39 +110,61 @@ class SettingsTab(QWidget):
         self.quiet_end = QLineEdit()
         self.quiet_end.setInputMask("99:99;_")
         self.four_eyes = QCheckBox("Người duyệt phải khác người soạn (nguyên tắc 4 mắt)")
-        self.api_enabled = QCheckBox("Bật kênh Official API (chỉ khi Zalo đã xác nhận quyền truy cập)")
+        self.api_enabled = QCheckBox("Bật kênh Official API")
         self.auto_stop = QSpinBox(maximum=100, suffix=" lỗi")
 
-        form = QFormLayout()
-        form.addRow("Tên người dùng:", self.operator_name)
-        form.addRow("Khoảng cách tối thiểu / nhóm:", self.min_interval)
-        form.addRow("Tối đa mỗi nhóm / 24 giờ:", self.per_group)
-        form.addRow("Tối đa tất cả nhóm / 24 giờ:", self.daily_limit)
-        form.addRow("Không gửi lại cùng nội dung trong:", self.dedupe)
-        q = QHBoxLayout()
-        q.addWidget(self.quiet_start)
-        q.addWidget(QLabel("→"))
-        q.addWidget(self.quiet_end)
-        q.addStretch()
-        form.addRow("Khung giờ yên lặng:", q)
-        form.addRow("", self.four_eyes)
-        form.addRow("", self.api_enabled)
-        form.addRow("Tự dừng khẩn cấp sau:", self.auto_stop)
+        def section(title, subtitle, rows):
+            frame, lay = card(title, subtitle)
+            form = QFormLayout()
+            form.setVerticalSpacing(10)
+            form.setHorizontalSpacing(16)
+            for text, w in rows:
+                form.addRow(text, w)
+            lay.addLayout(form)
+            return frame
+
+        q = QWidget()
+        ql = QHBoxLayout(q)
+        ql.setContentsMargins(0, 0, 0, 0)
+        ql.addWidget(self.quiet_start)
+        ql.addWidget(label("đến"))
+        ql.addWidget(self.quiet_end)
+        ql.addStretch()
+        for w in (self.quiet_start, self.quiet_end):
+            w.setFixedWidth(80)
+        for w in (self.min_interval, self.daily_limit, self.per_group, self.dedupe, self.auto_stop):
+            w.setFixedWidth(140)
+            w.setButtonSymbols(QSpinBox.NoButtons)
+            w.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         api_state = "đã cấu hình" if svc.dispatcher.api_publisher.is_configured() else "chưa cấu hình"
-        note = QLabel(f"Adapter Official API: <b>{api_state}</b> ({svc.dispatcher.api_publisher.name}). "
-                      "Đặt giá trị 0 để tắt một giới hạn. Khung giờ yên lặng để trống (__:__) = tắt.")
-        note.setWordWrap(True)
+        general = section("Chung", None, [("Tên người dùng", self.operator_name), ("", self.four_eyes)])
+        limits = section("Giới hạn an toàn", "Đặt 0 để tắt một giới hạn. Khung giờ yên lặng để trống = tắt.", [
+            ("Khoảng cách tối thiểu / nhóm", self.min_interval),
+            ("Tối đa mỗi nhóm / 24 giờ", self.per_group),
+            ("Tối đa tất cả nhóm / 24 giờ", self.daily_limit),
+            ("Không gửi lại cùng nội dung trong", self.dedupe),
+            ("Khung giờ yên lặng", q),
+        ])
+        api = section("Official API",
+                      f"Adapter: <b>{api_state}</b> ({svc.dispatcher.api_publisher.name}). "
+                      "Chỉ bật khi Zalo đã xác nhận quyền truy cập nhóm.",
+                      [("", self.api_enabled), ("Tự dừng khẩn cấp sau", self.auto_stop)])
 
-        btn = QPushButton("💾 Lưu cài đặt")
-        btn.clicked.connect(self.save)
+        grid = QGridLayout()
+        grid.setSpacing(16)
+        grid.addWidget(general, 0, 0)
+        grid.addWidget(api, 1, 0)
+        grid.addWidget(limits, 0, 1, 2, 1)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
 
         lay = QVBoxLayout(self)
-        lay.addLayout(form)
-        lay.addWidget(note)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addLayout(grid)
         b = QHBoxLayout()
-        b.addWidget(btn)
         b.addStretch()
+        b.addWidget(button("Lưu cài đặt", "primary", self.save))
         lay.addLayout(b)
         lay.addStretch()
         self.reload()

@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
-    QSplitter, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QSplitter, QVBoxLayout,
+    QWidget,
 )
 
 from ..core.models import GroupStatus
 from ..core.services import Services
 from .common import GROUP_STATUS_VI, fill_table, guarded, make_table, selected_id
+from .theme import button, card, label
 
 
 def _yn(v: bool) -> str:
-    return "✔" if v else "✘"
+    return "Có" if v else "Không"
 
 
 class GroupsTab(QWidget):
@@ -28,7 +29,8 @@ class GroupsTab(QWidget):
 
         self.show_archived = QCheckBox("Hiện nhóm đã lưu trữ")
         self.show_archived.toggled.connect(self.reload)
-        self.table = make_table(["#", "Tên nhóm", "Được phép", "Quyền đăng", "Trạng thái", "API", "Link"])
+        self.table = make_table(["#", "Tên nhóm", "Được phép", "Quyền đăng", "Trạng thái", "API", "Link"],
+                                badge_cols=(2, 3, 4, 5))
         self.table.itemSelectionChanged.connect(self._load_selected)
 
         self.name = QLineEdit()
@@ -43,50 +45,64 @@ class GroupsTab(QWidget):
         self.api_group_id.setPlaceholderText("Chỉ điền khi Zalo đã cấp quyền truy cập nhóm qua API")
         self.api_verified = QCheckBox("Zalo đã xác nhận quyền truy cập nhóm qua API chính thức")
         self.notes = QPlainTextEdit()
-        self.notes.setMaximumHeight(90)
+        self.notes.setMaximumHeight(80)
 
         form = QFormLayout()
-        form.addRow("Tên nhóm:", self.name)
-        form.addRow("Link mời:", self.link)
-        form.addRow("", self.allowed)
-        form.addRow("", self.can_post)
-        form.addRow("Trạng thái:", self.status)
-        form.addRow("API group ID:", self.api_group_id)
-        form.addRow("", self.api_verified)
-        form.addRow("Ghi chú:", self.notes)
+        form.setVerticalSpacing(10)
+        form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form.addRow("Tên nhóm", self.name)
+        form.addRow("Link mời", self.link)
+        form.addRow("Trạng thái", self.status)
 
-        btn_new = QPushButton("➕ Nhóm mới")
-        btn_new.clicked.connect(self.clear_form)
-        btn_save = QPushButton("💾 Lưu nhóm")
-        btn_save.clicked.connect(self.save)
+        perm, pl = card(margins=12)
+        perm.setGraphicsEffect(None)
+        pl.addWidget(label("QUYỀN ĐĂNG", "StatLabel"))
+        pl.addWidget(self.allowed)
+        pl.addWidget(self.can_post)
 
-        hint = QLabel(
+        api, al = card(margins=12)
+        api.setGraphicsEffect(None)
+        al.addWidget(label("OFFICIAL API (TÙY CHỌN)", "StatLabel"))
+        al.addWidget(self.api_group_id)
+        al.addWidget(self.api_verified)
+
+        self.form_title = label("Thêm nhóm mới", "CardTitle")
+        hint = label(
             "Chỉ thêm những nhóm bạn là thành viên và được phép đăng bài quảng bá. "
-            "Nhóm mới mặc định <b>không được phép</b> cho tới khi bạn tích xác nhận."
-        )
-        hint.setWordWrap(True)
+            "Nhóm mới mặc định <b>không được phép</b> cho tới khi bạn tích xác nhận.", "InfoBox", wrap=True)
 
-        right = QWidget()
-        rl = QVBoxLayout(right)
+        right, rl = card()
+        rl.addWidget(self.form_title)
         rl.addWidget(hint)
         rl.addLayout(form)
-        b = QHBoxLayout()
-        b.addWidget(btn_new)
-        b.addWidget(btn_save)
-        b.addStretch()
-        rl.addLayout(b)
+        rl.addWidget(perm)
+        rl.addWidget(api)
+        rl.addWidget(label("GHI CHÚ", "StatLabel"))
+        rl.addWidget(self.notes)
         rl.addStretch()
+        b = QHBoxLayout()
+        b.addStretch()
+        b.addWidget(button("Làm mới form", slot=self.clear_form))
+        b.addWidget(button("Lưu nhóm", "primary", self.save))
+        rl.addLayout(b)
 
-        left = QWidget()
-        ll = QVBoxLayout(left)
-        ll.addWidget(self.show_archived)
-        ll.addWidget(self.table)
+        left, ll = card()
+        head = QHBoxLayout()
+        head.addWidget(label("Danh sách nhóm", "CardTitle"))
+        head.addStretch()
+        head.addWidget(self.show_archived)
+        head.addWidget(button("+  Nhóm mới", "primary", self.clear_form))
+        ll.addLayout(head)
+        ll.addWidget(self.table, 1)
 
         split = QSplitter()
+        split.setHandleWidth(16)
         split.addWidget(left)
         split.addWidget(right)
-        split.setSizes([560, 460])
-        QVBoxLayout(self).addWidget(split)
+        split.setSizes([640, 440])
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(split)
         self.reload()
         self.clear_form()
 
@@ -95,7 +111,7 @@ class GroupsTab(QWidget):
         fill_table(
             self.table,
             [[g.id, g.name, _yn(g.allowed), _yn(g.can_post), GROUP_STATUS_VI[g.status.value],
-              "✔ xác nhận" if g.api_verified and g.api_group_id else "—", g.link] for g in groups],
+              "Đã xác nhận" if g.api_verified and g.api_group_id else "—", g.link] for g in groups],
             [g.id for g in groups],
         )
 
@@ -106,6 +122,7 @@ class GroupsTab(QWidget):
             return
         g = self.svc.groups.get(gid)
         self.current_id = gid
+        self.form_title.setText(f"Sửa nhóm #{g.id}")
         self.name.setText(g.name)
         self.link.setText(g.link)
         self.allowed.setChecked(g.allowed)
@@ -118,6 +135,7 @@ class GroupsTab(QWidget):
     @guarded
     def clear_form(self):
         self.current_id = None
+        self.form_title.setText("Thêm nhóm mới")
         self.table.clearSelection()
         for w in (self.name, self.link, self.api_group_id):
             w.clear()
